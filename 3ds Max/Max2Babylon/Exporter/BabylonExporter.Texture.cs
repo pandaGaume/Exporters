@@ -699,12 +699,13 @@ namespace Max2Babylon
         // -- Export sub methods ---
         // -------------------------
 
-        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount)
+        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount, out IEnumerable<Func<float[], float[]>> operations ) 
         {
+            operations = default;
+            amount = 0.0f;
             if (texMap == null)
             {
-                amount = 0.0f;
-                return null;
+                 return null;
             }
 
             if (texMap.ClassName == "Normal Bump")
@@ -727,24 +728,8 @@ namespace Max2Babylon
                         RaiseError($"Only Normal Bump Texture in tangent space are supported.", 2);
                         return null;
                     }
-                    var flipR = block.GetInt(7, 0, 0);          // Normal texture Red chanel Flip
-                    if (flipR != 0)
-                    {
-                        RaiseError($"Only Normal Bump Texture without R flip are supported.", 2);
-                        return null;
-                    }
-                    var flipG = block.GetInt(8, 0, 0);          // Normal texture Green chanel Flip
-                    if (flipG != 0)
-                    {
-                        RaiseError($"Only Normal Bump Texture without G flip are supported.", 2);
-                        return null;
-                    }
-                    var swapRG = block.GetInt(9, 0, 0);         // Normal texture swap R and G channels
-                    if (swapRG != 0)
-                    {
-                        RaiseError($"Only Normal Bump Texture without R and G swap are supported.", 2);
-                        return null;
-                    }
+
+                    operations = GetNormalBumpOperations(block);
 
                     var bumpAmount = block.GetFloat(1, 0, 0);   // Bump texture Mult Spin
                     var bumpMap = block.GetTexmap(3, 0, 0);     // Bump texture
@@ -759,9 +744,38 @@ namespace Max2Babylon
                 }
             }
 
-            amount = 0.0f;
             RaiseError($"Texture type is not supported. Use a Bitmap or Normal Bump map instead.", 2);
             return null;
+        }
+
+        private IEnumerable<Func<float[], float[]>> GetNormalBumpOperations(IIParamBlock2 block)
+        {
+            var flipR = block.GetInt(7, 0, 0);          // Normal texture Red chanel Flip
+            if (flipR != 0)
+            {
+                Func<float[], float[]> f = (float[] a) => {
+                    var l = MathUtilities.Length(a[0], a[1], a[2]);
+                    return new float[] { 1.0f - (float)(a[0] / l), (float)(a[1] / l), (float)(a[2] / l) };
+                };
+                yield return f;
+            }
+            var flipG = block.GetInt(8, 0, 0);          // Normal texture Green chanel Flip
+            if (flipG != 0)
+            {
+                Func<float[], float[]> f = (float[] a) => {
+                    var l = MathUtilities.Length(a[0], a[1], a[2]);
+                    return new float[] { (float)(a[0] / l), 1.0f - (float)(a[1] / l), (float)(a[2] / l) };
+                };
+                yield return f;
+            }
+            var swapRG = block.GetInt(9, 0, 0);         // Normal texture swap R and G channels
+            if (swapRG != 0)
+            {
+                Func<float[], float[]> f = (float[] a) => {
+                    return new float[] { a[1], a[0], a[2] };
+                };
+                yield return f;
+            }
         }
 
         private BabylonTexture ExportTexture(ITexmap texMap, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false)
@@ -770,9 +784,10 @@ namespace Max2Babylon
             if (texture == null)
             {
                 float specialAmount;
-                var specialTexMap = _getSpecialTexmap(texMap, out specialAmount);
+                var specialTexMap = _getSpecialTexmap(texMap, out specialAmount, out var functions);
                 texture = _getBitmapTex(specialTexMap, false);
                 amount *= specialAmount;
+                return ExportBitmapTexture(texture, babylonScene, amount, allowCube, forceAlpha, functions);
             }
 
             return ExportBitmapTexture(texture, babylonScene, amount, allowCube, forceAlpha);
@@ -784,7 +799,7 @@ namespace Max2Babylon
             return ExportBitmapTexture(texture, babylonScene, amount, allowCube, forceAlpha);
         }
 
-        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false)
+        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false, IEnumerable<Func<float[], float[]>> functions = default)
         {
             if (texture == null)
             {

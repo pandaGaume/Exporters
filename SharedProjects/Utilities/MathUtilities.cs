@@ -73,6 +73,7 @@ namespace Utilities
         {
             return x1 * x2 + y1 * y2 + z1 * z2;
         }
+
         public static void CrossProduct(float x1, float y1, float z1, float x2, float y2, float z2, out float x3, out float y3, out float z3)
         {
             x3 = y1 * z2 - z1 * y2;
@@ -80,6 +81,10 @@ namespace Utilities
             z3 = x1 * y2 - y1 * x2;
         }
 
+        public static double Length(float x, float y, float z)
+        {
+            return Math.Sqrt(x * x + y * y + z * z);
+        }
 
         /**
          * Computes a texture transform matrix with a pre-transformation

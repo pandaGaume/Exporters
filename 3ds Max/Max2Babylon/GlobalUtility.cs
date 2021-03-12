@@ -351,42 +351,63 @@ namespace Max2Babylon
 
         private void AddCallbacks()
         {
-            // Retreive the material just created
-            string cmd = "maxMaterial = callbacks.notificationParam();";
+            foreach(var s in CallbackScripts())
+            {
+                ManagedServices.MaxscriptSDK.ExecuteMaxscriptCommand(s);
+            }
+        }
 
-            // Easy syntax for a switch/case expression
-            cmd += "\r\n" + "if classof maxMaterial == StandardMaterial then";
-            cmd += "\r\n" + "(";
-            cmd += "\r\n" + BabylonExporter.GetStandardBabylonAttributesDataCA();
-            cmd += "\r\n" + "custAttributes.add maxMaterial babylonAttributesDataCA;";
-            cmd += "\r\n" + ")";
-            cmd += "\r\n" + "else if classof maxMaterial == PhysicalMaterial then";
-            cmd += "\r\n" + "(";
-            cmd += "\r\n" + BabylonExporter.GetPhysicalBabylonAttributesDataCA();
-            cmd += "\r\n" + "custAttributes.add maxMaterial babylonAttributesDataCA;";
-            cmd += "\r\n" + ")";
-            cmd += "\r\n" + "else if classof maxMaterial == ai_standard_surface then";
-            cmd += "\r\n" + "(";
-            cmd += "\r\n" + BabylonExporter.GetAiStandardSurfaceBabylonAttributesDataCA();
-            cmd += "\r\n" + "custAttributes.add maxMaterial babylonAttributesDataCA;";
-            cmd += "\r\n" + ")";
+        private IEnumerable<string> CallbackScripts()
+        {
+            string fn = @"fn hasBabylonCustomAttribute mat attName = ( 
+                            l = custAttributes.count mat; 
+                            for i = 1 to l+1 do ( 
+                                if(mat.custAttributes[i] != undefined) then (
+                                    if(mat.custAttributes[i].name == attName) then return true
+                                )
+                             ); 
+                            return false;)";
+            yield return fn;
+
+            string checkNormalBump = $@"fn checkNormalBump mat = ( 
+                    bm = mat.Bump_Map; 
+                    if( bm != undefined and classof bm == Normal_Bump ) then ( 
+                        if (hasBabylonCustomAttribute bm ""Babylon Attributes"" == false) then ( 
+                            { BabylonExporter.GetNormalMapAttributesDataCA()}
+                            custAttributes.add bm babylonAttributesDataCA;
+                        )
+                    ))";
+
+            yield return checkNormalBump;
+
+             string cmd = $@"maxMaterial = callbacks.notificationParam();
+                    if (classof maxMaterial == StandardMaterial) then (
+                        {BabylonExporter.GetStandardBabylonAttributesDataCA()}
+                        custAttributes.add maxMaterial babylonAttributesDataCA;
+                    ) else if (classof maxMaterial == PhysicalMaterial) then (
+                        if( hasBabylonCustomAttribute maxMaterial ""Babylon Attributes"" == false) then (
+                           { BabylonExporter.GetPhysicalBabylonAttributesDataCA()}
+                           custAttributes.add maxMaterial babylonAttributesDataCA;
+                           when parameters maxMaterial change do checkNormalBump maxMaterial;
+                        )
+                    ) else if (classof maxMaterial == ai_standard_surface) then (
+                        {BabylonExporter.GetAiStandardSurfaceBabylonAttributesDataCA()}
+                        custAttributes.add maxMaterial babylonAttributesDataCA;
+                    );";
 
             // Escape cmd
             cmd = cmd.Replace("\"", "\\\"");
-
-            // Create cmd as string
-            ManagedServices.MaxscriptSDK.ExecuteMaxscriptCommand("cmd = \"" + cmd + "\"");
-
-            // Remove any definition of this callback
-            ManagedServices.MaxscriptSDK.ExecuteMaxscriptCommand("callbacks.removeScripts id:#BabylonAttributesMaterial;");
-
+            yield return "cmd = \"" + cmd + "\"";
+            var scriptid = "id:#BabylonAttributesMaterial";
+            // remove previous
+            yield return $"callbacks.removeScripts {scriptid};";
             // Add a callback triggered when a new material is created
             // Note:
             // The callback is NOT persistent (default value is false).
             // This means that it is not linked to a specific file.
             // Rather, the callback is active for the current run of 3ds Max.
             // See Autodesk documentation for more info: http://help.autodesk.com/view/3DSMAX/2015/ENU/?guid=__files_GUID_C1F6495F_5831_4FC8_A00C_667C5F2EAE36_htm
-            ManagedServices.MaxscriptSDK.ExecuteMaxscriptCommand("callbacks.addScript #mtlRefAdded cmd id:#BabylonAttributesMaterial;");
+            yield return $"callbacks.addScript #mtlRefAdded cmd {scriptid};";
         }
     }
 }
