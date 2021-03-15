@@ -514,6 +514,12 @@ namespace Max2Babylon
                     }; 
                 }
 
+                exportParameters.normalMapParams = new MaxNormalMapParameters()
+                {
+                    useMaxTransforms = false,
+                    mapFormat = NormalMapFormat.unknown
+                };
+
                 exporter.callerForm = this;
 
                 exporter.Export(exportParameters);

@@ -6,7 +6,6 @@ using System.Linq;
 using System.IO;
 using System.Reflection;
 using BabylonExport.Entities;
-using GLTFExport.Entities;
 
 namespace Utilities
 {
@@ -14,6 +13,33 @@ namespace Utilities
     {
         public static List<string> validGltfFormats = new List<string>(new string[] { "png", "jpg", "jpeg" });
         public static List<string> invalidGltfFormats = new List<string>(new string[] { "dds", "tga", "tif", "tiff", "bmp", "gif" });
+        public static readonly IEnumerable<Func<Color, Color>> NoTransforms = Enumerable.Empty<Func<Color, Color>>();
+
+        public static void TransformTexture(string sourcePath, IEnumerable<Func<Color, Color>> transforms, string destPath, long imageQuality, ILoggingProvider logger)
+        {
+            _copyTexture(sourcePath, transforms, destPath, imageQuality, validGltfFormats, invalidGltfFormats, logger);
+        }
+
+        public static void TransformInPlace(Bitmap source, IEnumerable<Func<Color, Color>> transforms)
+        {
+            if (transforms.Count() != 0)
+            {
+                var w = source.Width;
+                var h = source.Height;
+                for (var y = 0; y != h; y++)
+                {
+                    for (var x = 0; x != w; x++)
+                    {
+                        var tmp = source.GetPixel(x, y);
+                        foreach (var t in transforms)
+                        {
+                            tmp = t(tmp);
+                        }
+                        source.SetPixel(x, y, tmp);
+                    }
+                }
+            }
+        }
 
         public static bool GetMinimalBitmapDimensions(out int width, out int height, params Bitmap[] bitmaps)
         {
@@ -121,7 +147,12 @@ namespace Utilities
 
         public static void CopyTexture(string sourcePath, string destPath, long imageQuality, ILoggingProvider logger)
         {
-            _copyTexture(sourcePath, destPath, imageQuality, validGltfFormats, invalidGltfFormats, logger);
+            _copyTexture(sourcePath, NoTransforms, destPath, imageQuality, validGltfFormats, invalidGltfFormats, logger);
+        }
+
+        public static void CopyTexture(string sourcePath, IEnumerable<Func<Color, Color>> transforms, string destPath, long imageQuality, ILoggingProvider logger)
+        {
+            _copyTexture(sourcePath, NoTransforms, destPath, imageQuality, validGltfFormats, invalidGltfFormats, logger);
         }
 
         public static string GetValidImageFormat(string extension)
@@ -241,7 +272,7 @@ namespace Utilities
         /// <param name="destPath"></param>
         /// <param name="validFormats"></param>
         /// <param name="invalidFormats"></param>
-        private static void _copyTexture(string sourcePath, string destPath, long imageQuality, List<string> validFormats, List<string> invalidFormats, ILoggingProvider logger)
+        private static void _copyTexture(string sourcePath, IEnumerable<Func<Color, Color>> transforms, string destPath, long imageQuality, List<string> validFormats, List<string> invalidFormats, ILoggingProvider logger)
         {
             try
             {
@@ -251,14 +282,21 @@ namespace Utilities
 
                     if (validFormats.Contains(imageFormat))
                     {
-                        if (sourcePath != destPath)
+                        if (transforms.Count() == 0)
                         {
-                            File.Copy(sourcePath, destPath, true);
+                            if (sourcePath != destPath)
+                            {
+                                File.Copy(sourcePath, destPath, true);
+                            }
+                        }
+                        else
+                        {
+                            _convertToBitmapAndSave(sourcePath, NoTransforms, destPath, imageFormat, imageQuality, logger);
                         }
                     }
                     else if (invalidFormats.Contains(imageFormat))
                     {
-                        _convertToBitmapAndSave(sourcePath, destPath, imageFormat, imageQuality, logger);
+                        _convertToBitmapAndSave(sourcePath, NoTransforms, destPath, imageFormat, imageQuality, logger);
                     }
                     else
                     {
@@ -283,7 +321,7 @@ namespace Utilities
         /// <param name="sourcePath"></param>
         /// <param name="destPath"></param>
         /// <param name="imageFormat"></param>
-        private static void _convertToBitmapAndSave(string sourcePath, string destPath, string imageFormat, long imageQuality, ILoggingProvider logger)
+        private static void _convertToBitmapAndSave(string sourcePath, IEnumerable<Func<Color, Color>> transforms, string destPath, string imageFormat, long imageQuality, ILoggingProvider logger)
         {
             Bitmap bitmap;
             switch (imageFormat)
@@ -294,6 +332,7 @@ namespace Utilities
                     try
                     {
                         bitmap = GDImageLibrary._DDS.LoadImage(sourcePath);
+
                         SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
                     }
                     catch (Exception e)
@@ -303,33 +342,62 @@ namespace Utilities
                     break;
 #endif
 #if !DONT_USE_PALOMA_TARGAIMAGE
-            case "tga":
-                    // External library TargaImage.dll
-                    try
+                case "tga":
                     {
-                        bitmap = Paloma.TargaImage.LoadTargaImage(sourcePath);
-                        SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
+                        // External library TargaImage.dll
+                        try
+                        {
+                            bitmap = Paloma.TargaImage.LoadTargaImage(sourcePath);
+                            if (transforms.Count() != 0) TransformInPlace(bitmap, transforms);
+                            SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
+                        }
+                        catch (Exception e)
+                        {
+                            logger.RaiseError(string.Format("Failed to convert texture {0} to png: {1}", Path.GetFileName(sourcePath), e.Message), 3);
+                        }
+                        break;
                     }
-                    catch (Exception e)
-                    {
-                        logger.RaiseError(string.Format("Failed to convert texture {0} to png: {1}", Path.GetFileName(sourcePath), e.Message), 3);
-                    }
-                    break;
 #endif
                 case "bmp":
-                    bitmap = new Bitmap(sourcePath);
-                    SaveBitmap(bitmap, destPath, ImageFormat.Jpeg, imageQuality, logger); // no alpha
-                    break;
+                    {
+                        bitmap = new Bitmap(sourcePath);
+                        if (transforms.Count() != 0) TransformInPlace(bitmap, transforms);
+                        SaveBitmap(bitmap, destPath, ImageFormat.Jpeg, imageQuality, logger); // no alpha
+                        break;
+                    }
+                case "jpeg":
+                    {
+                        if (transforms.Count() == 0)
+                        {
+                            File.Copy(sourcePath, destPath, true);
+                            break;
+                        }
+                        bitmap = new Bitmap(sourcePath);
+                        if (transforms.Count() != 0) TransformInPlace(bitmap, transforms);
+                        SaveBitmap(bitmap, destPath, ImageFormat.Jpeg, imageQuality, logger);
+                        break;
+                    }
+                case "png":
+                    {
+                        if (transforms.Count() == 0)
+                        {
+                            File.Copy(sourcePath, destPath, true);
+                            break;
+                        }
+                        bitmap = new Bitmap(sourcePath);
+                        if (transforms.Count() != 0) TransformInPlace(bitmap, transforms);
+                        SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
+                        break;
+                    }
                 case "tif":
                 case "tiff":
                 case "gif":
-                    bitmap = new Bitmap(sourcePath);
-                    SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
-                    break;
-                case "jpeg":
-                case "png":
-                    File.Copy(sourcePath, destPath, true);
-                    break;
+                    {
+                        bitmap = new Bitmap(sourcePath);
+                        if (transforms.Count() != 0) TransformInPlace(bitmap, transforms);
+                        SaveBitmap(bitmap, destPath, ImageFormat.Png, imageQuality, logger);
+                        break;
+                    }
                 default:
                     logger.RaiseWarning(string.Format("Format of texture {0} is not supported by the exporter. Consider using a standard image format like jpg or png.", Path.GetFileName(sourcePath)), 3);
                     break;

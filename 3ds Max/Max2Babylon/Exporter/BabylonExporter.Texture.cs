@@ -220,6 +220,16 @@ namespace Max2Babylon
             return null;
         }
 
+        private BabylonTexture ExportNormalTexture(IIGameMaterial materialNode, int index, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false)
+        {
+            var texMap = _getTexMap(materialNode, index);
+            if (texMap != null)
+            {
+                return ExportTexture(texMap, babylonScene, amount, allowCube);
+            }
+            return null;
+        }
+
         private BabylonTexture ExportClearCoatTexture(ITexmap intensityTexMap, ITexmap roughnessTexMap, float coatWeight, float coatRoughness, BabylonScene babylonScene, string materialName, bool invertRoughness)
         {
             // --- Babylon texture ---
@@ -699,7 +709,7 @@ namespace Max2Babylon
         // -- Export sub methods ---
         // -------------------------
 
-        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount, out IEnumerable<Func<float[], float[]>> operations ) 
+        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount, out IEnumerable<Func<Color, Color>> operations ) 
         {
             operations = default;
             amount = 0.0f;
@@ -729,7 +739,7 @@ namespace Max2Babylon
                         return null;
                     }
 
-                    operations = GetNormalBumpOperations(block);
+                    operations = GetNormalBump3DSMaxOperations(texMap, block);
 
                     var bumpAmount = block.GetFloat(1, 0, 0);   // Bump texture Mult Spin
                     var bumpMap = block.GetTexmap(3, 0, 0);     // Bump texture
@@ -748,31 +758,127 @@ namespace Max2Babylon
             return null;
         }
 
-        private IEnumerable<Func<float[], float[]>> GetNormalBumpOperations(IIParamBlock2 block)
+        /// <summary>
+        /// Create the list of operation to transform the NormalMap, according Max and Babylon attributes
+        /// </summary>
+        /// <param name="texMap"></param>
+        /// <param name="block"></param>
+        /// <returns></returns>
+        private IEnumerable<Func<Color, Color>> GetNormalBump3DSMaxOperations(ITexmap texMap, IIParamBlock2 block)
         {
             var flipR = block.GetInt(7, 0, 0);          // Normal texture Red chanel Flip
-            if (flipR != 0)
-            {
-                Func<float[], float[]> f = (float[] a) => {
-                    var l = MathUtilities.Length(a[0], a[1], a[2]);
-                    return new float[] { 1.0f - (float)(a[0] / l), (float)(a[1] / l), (float)(a[2] / l) };
-                };
-                yield return f;
-            }
             var flipG = block.GetInt(8, 0, 0);          // Normal texture Green chanel Flip
-            if (flipG != 0)
+            var swapRG = block.GetInt(9, 0, 0);         // Normal texture swap R and G channels
+
+
+            // try to retreive the custom Babylon Attributes
+            IICustAttribContainer custAtt = texMap.CustAttribContainer;
+            var n = custAtt.NumCustAttribs;
+            ICustAttrib att = null;
+            for (int i = 0; i != n; i++)
             {
-                Func<float[], float[]> f = (float[] a) => {
-                    var l = MathUtilities.Length(a[0], a[1], a[2]);
-                    return new float[] { (float)(a[0] / l), 1.0f - (float)(a[1] / l), (float)(a[2] / l) };
+                var tmp = custAtt.GetCustAttrib(i);
+                if (tmp.ClassName == MaterialCustomBabylonAttributeName)
+                {
+                    att = tmp;
+                    break;
+                }
+            }
+
+            MaxNormalMapParameters global = (MaxNormalMapParameters)exportParameters.normalMapParams;
+            MaxNormalMapParameters parameters = new MaxNormalMapParameters();
+
+            IIParamBlock2 customBlock = att?.GetParamBlockByID(0);
+            if (customBlock != null)
+            {
+                var useMaxTransforms = customBlock.GetInt(0, 0, 0) != 0;
+                parameters.useMaxTransforms = customBlock.GetInt(0, 0, 0) != 0;
+                parameters.mapFormat = (NormalMapFormat)customBlock.GetInt(1, 0, 0);
+            }
+
+            if (!global.useMaxTransforms)
+            {
+                // global MUST be true to use local parameter 
+                parameters.useMaxTransforms = false;
+                
+                // global local result
+                //   0      0     0
+                //   0      1     0 
+                //   1      0     0 
+                //   1      1     1 
+
+            }
+
+            if (parameters.mapFormat == NormalMapFormat.unknown)
+            {
+                // if local is unknown, then the global is take
+                parameters.mapFormat = global.mapFormat;
+
+                // global local result
+                //   1      1     1
+                //   2      1     2
+                //   3      1     3
+
+                //  any    y!=1   y
+            }
+
+            bool mustFlipG = parameters.useMaxTransforms && flipG != 0;
+            bool mustFlipR = parameters.useMaxTransforms && flipR != 0;
+            bool mustSwapRG = parameters.useMaxTransforms && swapRG != 0;
+
+            switch (parameters.mapFormat)
+            {
+                case NormalMapFormat.opengl:
+                    {
+                        if (isBabylonExported)
+                        {
+                            // texture source is OpenGL and babylon is DirectX, so we may flip G. May void the Max operation.
+                            mustFlipG = !mustFlipG;
+                        }
+                        break;
+                    }
+                case NormalMapFormat.directx:
+                    {
+                        if (isGltfExported)
+                        {
+                            // texture source is DirectX and Gltf is OpenGL, so we may flip G. May void the Max operation.
+                            mustFlipG = !mustFlipG;
+                        }
+                        break;
+                    }
+            }
+
+            if (mustFlipR || mustFlipG)
+            {
+                // ensure it's normalized
+                Func<Color, Color> f = (Color a) =>
+                {
+                    var l = MathUtilities.Length(a.R, a.G, a.B);
+                    return Color.FromArgb((int)(a.R / l), (int)(a.G / l), (int)(a.B / l));
                 };
                 yield return f;
             }
-            var swapRG = block.GetInt(9, 0, 0);         // Normal texture swap R and G channels
-            if (swapRG != 0)
+            if (mustFlipR)
             {
-                Func<float[], float[]> f = (float[] a) => {
-                    return new float[] { a[1], a[0], a[2] };
+                Func<Color, Color> f = (Color a) =>
+                {
+                    return Color.FromArgb(255 - a.R, a.G, a.B);
+                };
+                yield return f;
+            }
+            if (mustFlipG)
+            {
+                Func<Color, Color> f = (Color a) =>
+                {
+                    return Color.FromArgb(a.R, 255 - a.G, a.B);
+                };
+                yield return f;
+            }
+            if (mustSwapRG)
+            {
+                Func<Color, Color> f = (Color a) =>
+                {
+                    return Color.FromArgb(a.G, a.R, a.B);
                 };
                 yield return f;
             }
@@ -799,7 +905,7 @@ namespace Max2Babylon
             return ExportBitmapTexture(texture, babylonScene, amount, allowCube, forceAlpha);
         }
 
-        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false, IEnumerable<Func<float[], float[]>> functions = default)
+        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false, IEnumerable<Func<Color, Color>> transforms = default)
         {
             if (texture == null)
             {
@@ -869,7 +975,7 @@ namespace Max2Babylon
                 if (isBabylonExported)
                 {
                     var destPath = Path.Combine(babylonScene.OutputPath, babylonTexture.name);
-                    TextureUtilities.CopyTexture(sourcePath, destPath, exportParameters.txtQuality, this);
+                    TextureUtilities.CopyTexture(sourcePath, transforms, destPath, exportParameters.txtQuality, this);
 
                     // Is cube
                     _exportIsCube(Path.Combine(babylonScene.OutputPath, babylonTexture.name), babylonTexture, allowCube);

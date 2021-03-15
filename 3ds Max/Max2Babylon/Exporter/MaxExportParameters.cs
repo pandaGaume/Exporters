@@ -3,13 +3,20 @@ using BabylonExport.Entities;
 
 namespace Max2Babylon
 {
+    public class MaxNormalMapParameters : NormalMapParameters
+    {
+        public const bool useMaxTransformsDefault = false;
+        public static MaxNormalMapParameters Default = new MaxNormalMapParameters();
+
+        public bool useMaxTransforms = useMaxTransformsDefault;
+    }
+
     public enum BakeAnimationType
     {
         DoNotBakeAnimation,
         BakeAllAnimations,
         BakeSelective
     }
-
 
     public class MaxExportParameters : ExportParameters
     {

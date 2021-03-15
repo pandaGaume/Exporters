@@ -3,6 +3,20 @@ using GLTFExport.Entities;
 
 namespace BabylonExport.Entities
 {
+    public enum NormalMapFormat
+    {
+        unknown = 0,
+        directx = 1,
+        opengl = 2
+    }
+
+    public class NormalMapParameters
+    {
+        public const NormalMapFormat mapFormatDefault = NormalMapFormat.unknown;
+
+        public NormalMapFormat mapFormat = mapFormatDefault;
+    }
+
     // Define the policy use to assign format to aggregated texture such ORM
     public enum TextureFormatExportPolicy
     {
@@ -103,5 +117,10 @@ namespace BabylonExport.Entities
         public bool exportMorphTangents = true;
         public bool exportMorphNormals = true;
         #endregion
+
+        #region NORMAL_MAP
+        public NormalMapParameters normalMapParams = null ;
+        #endregion
+
     }
 }

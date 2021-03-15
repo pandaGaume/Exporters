@@ -19,6 +19,9 @@ namespace Max2Babylon
 {
     partial class BabylonExporter
     {
+        const  string MaterialCustomBabylonAttributeName = "Babylon Attributes";
+
+
         // use as scale for GetSelfIllumColor to convert [0,PI] to [O,1]
         private const float selfIllumScale = (float)(1.0 / Math.PI);
 
@@ -286,6 +289,7 @@ namespace Max2Babylon
                     }
 
                     babylonMaterial.bumpTexture = ExportTexture(stdMat, 8, out fresnelParameters, babylonScene);                   // Bump
+
                     babylonMaterial.reflectionTexture = ExportTexture(stdMat, 9, out fresnelParameters, babylonScene, true);       // Reflection
                     if (fresnelParameters != null)
                     {
@@ -562,7 +566,7 @@ namespace Max2Babylon
                     }
 
                     var normalMapAmount = propertyContainer.GetFloatProperty(91);
-                    babylonMaterial.normalTexture = ExportPBRTexture(materialNode, 30, babylonScene, normalMapAmount);
+                    babylonMaterial.normalTexture = ExportNormalTexture(materialNode, 30, babylonScene, normalMapAmount);
 
                     babylonMaterial.emissiveTexture = ExportPBRTexture(materialNode, 17, babylonScene);
 
@@ -1082,21 +1086,22 @@ namespace Max2Babylon
             return null;
         }
 
-        public static string GetNormalMapAttributesDataCA(MaxNormalMap map = null)
+        public static string GetNormalMapAttributesDataCA(MaxNormalMapParameters map = null)
         {
-            var name = "Babylon Attributes";
+            MaxNormalMapParameters config = map ?? MaxNormalMapParameters.Default;
+            var name = MaterialCustomBabylonAttributeName;
             return $@"babylonAttributesDataCA = attributes ""{name}"" attribID:#(0x4f890716, 0x24da1760)
                      (
                        parameters main rollout:params
                        (
-                           babylonUseMaxTransforms type:#boolean ui:babylonUseMaxTransforms_ui
-                           babylonNormalBumpFormat type:#integer ui:babylonBumpFormat_ui
+                           babylonUseMaxTransforms type:#boolean ui:babylonUseMaxTransforms_ui default:{config.useMaxTransforms}
+                           babylonNormalBumpFormat type:#integer ui:babylonBumpFormat_ui default:{(int)config.mapFormat}
                        )
                        rollout params ""{name}""
                        (
                            checkbox babylonUseMaxTransforms_ui ""Use 3dsMax Channel directions""
                            group ""Normal Map Format"" (
-                                radiobuttons  babylonBumpFormat_ui labels:#(""DirectX"", ""OpenGL"") default:1 tooltip:""Identify the format of this normal map""
+                                radiobuttons  babylonBumpFormat_ui labels:#(""Unknown"",""DirectX"", ""OpenGL"") 
                            )
                        )
                      );";
@@ -1152,7 +1157,8 @@ namespace Max2Babylon
 
         public static string GetPhysicalBabylonAttributesDataCA(int babylonTransparencyMode = 0)
         {
-            return $@"babylonAttributesDataCA = attributes ""Babylon Attributes"" attribID:#(0x4f890715, 0x24da1759)
+            var name = MaterialCustomBabylonAttributeName;
+            return $@"babylonAttributesDataCA = attributes ""{name}"" attribID:#(0x4f890715, 0x24da1759)
                      (
                        parameters main rollout:params
                        (
@@ -1166,7 +1172,7 @@ namespace Max2Babylon
                            babylonSpecularIntensity type:#float ui:babylonSpecularIntensity_ui default:1.0
                            babylonTransparencyMode type:#integer default: {babylonTransparencyMode}
                         )
-                        rollout params ""Babylon Attributes""
+                        rollout params ""{name}""
                         (
                           checkbox babylonUnlit_ui ""Unlit"" across:3
                           checkbox babylonBackfaceCulling_ui ""Backface Culling""
