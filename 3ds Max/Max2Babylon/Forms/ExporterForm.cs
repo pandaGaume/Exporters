@@ -516,7 +516,7 @@ namespace Max2Babylon
 
                 exportParameters.normalMapParams = new MaxNormalMapParameters()
                 {
-                    useMaxTransforms = false,
+                    useMaxTransforms = true,
                     mapFormat = NormalMapFormat.unknown
                 };
 
