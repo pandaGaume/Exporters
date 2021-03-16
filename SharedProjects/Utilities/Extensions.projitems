@@ -21,7 +21,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)JsonTextWriterOptimized.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathUtilities.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)PathUtilities.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)TextureUtilities.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Textures\TextureOperation.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Textures\TextureUtilities.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TreeViewExtension.cs" />
   </ItemGroup>
   <ItemGroup>

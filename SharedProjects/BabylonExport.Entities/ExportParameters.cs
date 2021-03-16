@@ -5,9 +5,9 @@ namespace BabylonExport.Entities
 {
     public enum NormalMapFormat
     {
-        unknown = 0,
-        directx = 1,
-        opengl = 2
+        unknown = 1,
+        directx = 2,
+        opengl  = 3
     }
 
     public class NormalMapParameters

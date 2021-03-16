@@ -709,7 +709,7 @@ namespace Max2Babylon
         // -- Export sub methods ---
         // -------------------------
 
-        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount, out IEnumerable<Func<Color, Color>> operations ) 
+        private ITexmap _getSpecialTexmap(ITexmap texMap, out float amount, out IEnumerable<TextureOperation> operations ) 
         {
             operations = default;
             amount = 0.0f;
@@ -764,7 +764,7 @@ namespace Max2Babylon
         /// <param name="texMap"></param>
         /// <param name="block"></param>
         /// <returns></returns>
-        private IEnumerable<Func<Color, Color>> GetNormalBump3DSMaxOperations(ITexmap texMap, IIParamBlock2 block)
+        private IEnumerable<TextureOperation> GetNormalBump3DSMaxOperations(ITexmap texMap, IIParamBlock2 block)
         {
             var flipR = block.GetInt(7, 0, 0);          // Normal texture Red chanel Flip
             var flipG = block.GetInt(8, 0, 0);          // Normal texture Green chanel Flip
@@ -793,7 +793,7 @@ namespace Max2Babylon
             {
                 var useMaxTransforms = customBlock.GetInt(0, 0, 0) != 0;
                 parameters.useMaxTransforms = customBlock.GetInt(0, 0, 0) != 0;
-                parameters.mapFormat = (NormalMapFormat)customBlock.GetInt(1, 0, 0);
+                parameters.mapFormat = (NormalMapFormat)customBlock.GetInt(1, 0, 0); 
             }
 
             if (!global.useMaxTransforms)
@@ -848,39 +848,17 @@ namespace Max2Babylon
                     }
             }
 
-            if (mustFlipR || mustFlipG)
-            {
-                // ensure it's normalized
-                Func<Color, Color> f = (Color a) =>
-                {
-                    var l = MathUtilities.Length(a.R, a.G, a.B);
-                    return Color.FromArgb((int)(a.R / l), (int)(a.G / l), (int)(a.B / l));
-                };
-                yield return f;
-            }
             if (mustFlipR)
             {
-                Func<Color, Color> f = (Color a) =>
-                {
-                    return Color.FromArgb(255 - a.R, a.G, a.B);
-                };
-                yield return f;
+                yield return new FlipChannel(FlipChannel.ChannelRed);
             }
             if (mustFlipG)
             {
-                Func<Color, Color> f = (Color a) =>
-                {
-                    return Color.FromArgb(a.R, 255 - a.G, a.B);
-                };
-                yield return f;
+                yield return new FlipChannel(FlipChannel.ChannelGreen);
             }
             if (mustSwapRG)
             {
-                Func<Color, Color> f = (Color a) =>
-                {
-                    return Color.FromArgb(a.G, a.R, a.B);
-                };
-                yield return f;
+                yield return new SwapChannel(FlipChannel.ChannelRed, FlipChannel.ChannelGreen);
             }
         }
 
@@ -905,7 +883,7 @@ namespace Max2Babylon
             return ExportBitmapTexture(texture, babylonScene, amount, allowCube, forceAlpha);
         }
 
-        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false, IEnumerable<Func<Color, Color>> transforms = default)
+        private BabylonTexture ExportBitmapTexture(IBitmapTex texture, BabylonScene babylonScene, float amount = 1.0f, bool allowCube = false, bool forceAlpha = false, IEnumerable<TextureOperation> transforms = default)
         {
             if (texture == null)
             {
@@ -935,10 +913,15 @@ namespace Max2Babylon
                 return textureMap[textureID];
             }
             else
-            { 
+            {
+                TextureOperation[] operations = transforms.ToArray();
+
+                // combine transform to the destination name.
+                var operationsCodeStr = operations.Length != 0 ? $"_{operations.EncodeName()}" : string.Empty;
+
                 var babylonTexture = new BabylonTexture(textureID)
                 {
-                    name = Path.GetFileNameWithoutExtension(texture.MapName) + "." + validImageFormat
+                    name = $"{Path.GetFileNameWithoutExtension(texture.MapName)}{operationsCodeStr}.{validImageFormat}"
                 };
                 RaiseMessage($"texture id = {babylonTexture.Id}", 2);
 
@@ -971,17 +954,21 @@ namespace Max2Babylon
                 ExportFloatAnimation("wAng", animations, key => new[] { uvGen.GetWAng(key) });
                 babylonTexture.animations = animations.ToArray();
 
-                // Copy texture to output
+
                 if (isBabylonExported)
                 {
+                    // Copy texture to output
                     var destPath = Path.Combine(babylonScene.OutputPath, babylonTexture.name);
-                    TextureUtilities.CopyTexture(sourcePath, transforms, destPath, exportParameters.txtQuality, this);
-
+                    TextureUtilities.CopyTexture(sourcePath, operations, destPath, exportParameters.txtQuality, this);
                     // Is cube
                     _exportIsCube(Path.Combine(babylonScene.OutputPath, babylonTexture.name), babylonTexture, allowCube);
                 }
                 else
                 {
+                    if( operations.Length != 0)
+                    {
+                        babylonTexture.bitmap = TextureUtilities.GetBitmap(sourcePath, operations, this);
+                    }
                     babylonTexture.isCube = false;
                 }
                 babylonTexture.originalPath = sourcePath;
